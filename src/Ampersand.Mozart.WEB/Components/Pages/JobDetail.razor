@@ -1,0 +1,133 @@
+@page "/jobs/{Id}"
+@inject JobManager Jobs
+@inject JobLogStore Logs
+@implements IDisposable
+
+<PageTitle>Mozart · Job @Id</PageTitle>
+
+@if (_job is null && _record is null)
+{
+    <div class="empty">Job not found. <a href="/jobs">Back to jobs</a></div>
+}
+else
+{
+    var title = _job?.Title ?? _record!.Title;
+    var status = _job?.Status ?? (Enum.TryParse<JobStatus>(_record!.Status, out var parsed) ? parsed : JobStatus.Failed);
+    var reason = _job?.Diagnose() ?? _record?.Reason;
+    var projectId = _job?.ProjectId ?? _record!.ProjectId;
+    var projectName = _job?.ProjectName ?? _record!.ProjectName;
+    var filePath = _job?.LogFilePath ?? _record?.LogFile;
+
+    <div class="page-head">
+        <div>
+            <h1>@title</h1>
+            <p class="lede">
+                <a href="@($"/projects/{projectId}")">@projectName</a>
+            </p>
+        </div>
+        <div class="actions">
+            <StatusBadge Status="status" />
+            @if (_job?.IsActive == true)
+            {
+                <button class="btn btn-danger" @onclick="() => Jobs.Cancel(_job.Id)">Cancel</button>
+            }
+            <a class="btn" href="/jobs">All jobs</a>
+            <a class="btn" href="@($"/api/jobs/{Id}/log")" target="_blank">Raw log</a>
+        </div>
+    </div>
+
+    @if (status == JobStatus.Failed)
+    {
+        <div class="flash flash-err" style="margin-bottom:16px;font-size:15px">
+            <strong>Reason:</strong> @(reason ?? "see log below")
+        </div>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(filePath))
+    {
+        <div class="muted path" style="margin-bottom:12px">@filePath</div>
+    }
+
+    @if (_job is not null)
+    {
+        <div class="grid grid-4" style="margin-bottom:16px">
+            <div class="card stat">
+                <div class="label">Duration</div>
+                <div class="value" style="font-size:18px">@Formatters.Duration(_job.Duration)</div>
+            </div>
+            <div class="card stat">
+                <div class="label">Exit</div>
+                <div class="value" style="font-size:18px">@(_job.ExitCode?.ToString() ?? "—")</div>
+            </div>
+            <div class="card stat">
+                <div class="label">Errors / warnings</div>
+                <div class="value" style="font-size:18px">@_job.ErrorCount / @_job.WarningCount</div>
+            </div>
+            <div class="card stat">
+                <div class="label">Lines</div>
+                <div class="value" style="font-size:18px">@_job.LogCount</div>
+            </div>
+        </div>
+
+        <div class="card" style="margin-bottom:12px">
+            <dl class="kv">
+                <dt>Command</dt><dd class="mono">@_job.FileName @_job.DisplayArguments</dd>
+                <dt>Working dir</dt><dd class="mono">@_job.WorkingDirectory</dd>
+                <dt>File</dt><dd class="mono">@(filePath ?? "—")</dd>
+            </dl>
+        </div>
+
+        <JobLog Lines="_lines" />
+    }
+    else
+    {
+        <div class="card" style="margin-bottom:12px">
+            <dl class="kv">
+                <dt>Command</dt><dd class="mono">@_record!.Command</dd>
+                <dt>Working dir</dt><dd class="mono">@_record.WorkingDirectory</dd>
+                <dt>File</dt><dd class="mono">@_record.LogFile</dd>
+            </dl>
+        </div>
+        <JobLog Lines="_lines" />
+    }
+}
+
+@code {
+    [Parameter] public string Id { get; set; } = "";
+
+    private Job? _job;
+    private JobRecord? _record;
+    private IReadOnlyList<JobLogLine> _lines = [];
+
+    protected override void OnParametersSet()
+    {
+        Jobs.Changed -= OnChanged;
+        Jobs.Changed += OnChanged;
+        Refresh();
+    }
+
+    private void Refresh()
+    {
+        _job = Jobs.GetJob(Id);
+        if (_job is not null)
+        {
+            _record = null;
+            _lines = _job.Snapshot();
+            return;
+        }
+
+        _record = Logs.Get(Id);
+        _lines = Logs.ReadLines(Id);
+    }
+
+    private void OnChanged()
+    {
+        _ = InvokeAsync(() =>
+        {
+            Refresh();
+            StateHasChanged();
+        });
+    }
+
+    public void Dispose() => Jobs.Changed -= OnChanged;
+}

@@ -1,0 +1,70 @@
+@using Microsoft.Extensions.Options
+@inject NativeFilePicker Picker
+@inject ProjectStore Store
+@inject NavigationManager Nav
+@inject IOptions<MozartOptions> Options
+
+<button class="@Css" disabled="@_busy" @onclick="PickAndAddAsync">@Label</button>
+@if (!string.IsNullOrWhiteSpace(_error))
+{
+    <div class="flash flash-err" style="margin-top:8px">@_error</div>
+}
+
+@code {
+    [Parameter] public string Label { get; set; } = "Add projects";
+    [Parameter] public string Css { get; set; } = "btn btn-primary";
+    [Parameter] public EventCallback OnAdded { get; set; }
+
+    private bool _busy;
+    private string? _error;
+
+    private async Task PickAndAddAsync()
+    {
+        _error = null;
+        _busy = true;
+        try
+        {
+            var roots = Options.Value.ScanRoots;
+            var start = roots.FirstOrDefault(Directory.Exists);
+            var files = await Picker.PickProjectsAsync(start);
+            if (files.Count == 0)
+            {
+                return;
+            }
+
+            var added = await Store.AddRangeAsync(files.Select(path => new CicdProject
+            {
+                Name = Path.GetFileNameWithoutExtension(path),
+                ProjectPath = Path.GetFullPath(path),
+                Configuration = "Release",
+            }));
+
+            if (OnAdded.HasDelegate)
+            {
+                await OnAdded.InvokeAsync();
+                return;
+            }
+
+            if (added == 1)
+            {
+                var project = (await Store.GetAllAsync()).FirstOrDefault(p =>
+                    string.Equals(p.ProjectPath, Path.GetFullPath(files[0]), StringComparison.OrdinalIgnoreCase));
+                if (project is not null)
+                {
+                    Nav.NavigateTo($"/projects/{project.Id}");
+                    return;
+                }
+            }
+
+            Nav.NavigateTo("/");
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

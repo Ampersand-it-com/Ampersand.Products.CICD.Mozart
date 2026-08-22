@@ -1,0 +1,31 @@
+<div class="log" @ref="_box">
+    @foreach (var line in Lines)
+    {
+        <div class="sev-@line.Severity.ToString().ToLowerInvariant()">
+            <span class="ts">@line.Timestamp.ToLocalTime().ToString("HH:mm:ss")</span>@line.Text
+        </div>
+    }
+    @if (Lines.Count == 0)
+    {
+        <div class="muted">Waiting for output…</div>
+    }
+</div>
+
+@code {
+    [Parameter] public IReadOnlyList<JobLogLine> Lines { get; set; } = [];
+
+    private ElementReference _box;
+    [Inject] private IJSRuntime Js { get; set; } = default!;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        try
+        {
+            await Js.InvokeVoidAsync("eval", "var e=document.querySelector('.log'); if(e) e.scrollTop=e.scrollHeight;");
+        }
+        catch
+        {
+            // JS not available during prerender / disconnect.
+        }
+    }
+}

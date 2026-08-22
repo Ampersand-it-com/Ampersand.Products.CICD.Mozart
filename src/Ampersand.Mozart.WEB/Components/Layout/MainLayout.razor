@@ -1,0 +1,62 @@
+﻿@inherits LayoutComponentBase
+@inject JobManager Jobs
+@implements IDisposable
+
+<div class="page">
+    <aside class="sidebar">
+        <div class="brand">
+            <div class="brand-mark">M</div>
+            <div>
+                <div class="brand-title">Mozart</div>
+                <div class="brand-sub">CI/CD panel</div>
+            </div>
+        </div>
+        <NavMenu ActiveJobCount="_active" />
+    </aside>
+
+    <main>
+        <div class="topbar">
+            <div class="topbar-title">Ampersand · local pipeline</div>
+            <div class="topbar-meta">
+                @if (_active > 0)
+                {
+                    <span class="badge badge-run">@_active running</span>
+                }
+                else
+                {
+                    <span class="muted">idle</span>
+                }
+            </div>
+        </div>
+        <article class="content">
+            @Body
+        </article>
+    </main>
+</div>
+
+<div id="blazor-error-ui" data-nosnippet>
+    An unhandled error has occurred.
+    <a href="." class="reload">Reload</a>
+    <span class="dismiss">x</span>
+</div>
+
+@code {
+    private int _active;
+
+    protected override void OnInitialized()
+    {
+        Jobs.Changed += OnJobsChanged;
+        _active = Jobs.GetActiveJobs().Count;
+    }
+
+    private void OnJobsChanged()
+    {
+        _ = InvokeAsync(() =>
+        {
+            _active = Jobs.GetActiveJobs().Count;
+            StateHasChanged();
+        });
+    }
+
+    public void Dispose() => Jobs.Changed -= OnJobsChanged;
+}

@@ -1,0 +1,5 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Ampersand.Mozart.WEB/Ampersand.Mozart.WEB.csproj" />
+  </Folder>
+</Solution>

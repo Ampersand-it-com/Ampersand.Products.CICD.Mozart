@@ -1,0 +1,236 @@
+﻿@page "/"
+@inject ProjectStore Store
+@inject JobManager Jobs
+@inject HealthProbeService Health
+@inject GitService Git
+@inject VersionBumpService Versions
+@inject PublishProfileService Profiles
+@implements IDisposable
+
+<PageTitle>Mozart · Dashboard</PageTitle>
+
+<div class="page-head">
+    <div>
+        <h1>Projects</h1>
+        <p class="lede">Register a solution, then restore / build / test / deploy from one place.</p>
+    </div>
+    <div class="actions">
+        <AddProjectButton OnAdded="AfterAddedAsync" />
+        <button class="btn" @onclick="ProbeAllAsync" disabled="@_probing">Ping all</button>
+    </div>
+</div>
+
+<div class="grid grid-4" style="margin-bottom:20px">
+    <div class="card stat">
+        <div class="label">Registered</div>
+        <div class="value">@_projects.Count</div>
+    </div>
+    <div class="card stat">
+        <div class="label">Running jobs</div>
+        <div class="value">@_active.Count</div>
+    </div>
+    <div class="card stat">
+        <div class="label">Healthy</div>
+        <div class="value">@_healthy</div>
+    </div>
+    <div class="card stat">
+        <div class="label">Failed last job</div>
+        <div class="value">@_failed</div>
+    </div>
+</div>
+
+@if (_projects.Count == 0)
+{
+    <div class="empty">
+        No projects yet. Press <strong>Add projects</strong> and pick a .sln / .csproj in the file dialog.
+    </div>
+}
+else
+{
+    <div class="field filter">
+        <input @bind="_filter" @bind:event="oninput" placeholder="Filter projects…" />
+    </div>
+    <div class="card table-wrap">
+        <table class="table table-tight">
+            <thead>
+                <tr>
+                    <th>Project</th>
+                    <th>Ver</th>
+                    <th>Git</th>
+                    <th>Health</th>
+                    <th>Last job</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var project in VisibleProjects())
+                {
+                    var last = Jobs.GetJobs(project.Id, 1).FirstOrDefault();
+                    var health = Health.GetCached(project.Id);
+                    var git = _git.GetValueOrDefault(project.Id);
+                    var busy = _active.Any(j => j.ProjectId == project.Id);
+                    var version = _versions.GetValueOrDefault(project.Id) ?? project.LastVersion;
+                    var failed = last?.Status == JobStatus.Failed || !string.IsNullOrWhiteSpace(project.LastDeployError);
+
+                    <tr>
+                        <td>
+                            <a href="@($"/projects/{project.Id}")" title="@project.ProjectPath">@project.DisplayName</a>
+                            @if (!project.IsEnabled)
+                            {
+                                <span class="badge badge-muted">paused</span>
+                            }
+                            <div class="path ellipsis" title="@project.ProjectPath">@project.ProjectPath</div>
+                        </td>
+                        <td>@(string.IsNullOrWhiteSpace(version) ? "—" : $"v{version}")</td>
+                        <td>
+                            @if (git?.IsRepository == true)
+                            {
+                                <span>@git.Branch</span>
+                                @if (!git.IsClean)
+                                {
+                                    <span class="muted"> @git.DirtyFiles dirty</span>
+                                }
+                            }
+                            else
+                            {
+                                <span class="muted">—</span>
+                            }
+                        </td>
+                        <td><HealthBadge Result="health" /></td>
+                        <td class="wrap">
+                            @if (last is not null)
+                            {
+                                <StatusBadge Status="last.Status" />
+                                <a href="@($"/jobs/{last.Id}")">@last.Title</a>
+                                <div class="muted">@Formatters.Relative(last.FinishedUtc ?? last.StartedUtc)</div>
+                            }
+                            else
+                            {
+                                <span class="muted">—</span>
+                            }
+                            @if (failed)
+                            {
+                                <div class="flash flash-err" style="margin-top:6px">
+                                    @(last?.Diagnose() ?? project.LastDeployError)
+                                </div>
+                            }
+                        </td>
+                        <td>
+                            <ProjectActions Project="project" Busy="busy" NavigateToJob="true" ShowOpen="false" />
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    private List<CicdProject> _projects = [];
+    private IReadOnlyList<Job> _active = [];
+    private readonly Dictionary<string, GitInfo> _git = [];
+    private readonly Dictionary<string, string> _versions = [];
+    private string _filter = "";
+    private bool _probing;
+    private int _healthy;
+    private int _failed;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Store.Changed += OnChanged;
+        Jobs.Changed += OnChanged;
+        Health.Changed += OnChanged;
+        await ReloadAsync();
+        WarmVersions();
+        _ = WarmGitAsync();
+    }
+
+    private IEnumerable<CicdProject> VisibleProjects()
+    {
+        if (string.IsNullOrWhiteSpace(_filter))
+        {
+            return _projects;
+        }
+
+        return _projects.Where(p =>
+            p.DisplayName.Contains(_filter, StringComparison.OrdinalIgnoreCase) ||
+            p.ProjectPath.Contains(_filter, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private async Task AfterAddedAsync()
+    {
+        await ReloadAsync();
+        WarmVersions();
+        _ = WarmGitAsync();
+    }
+
+    private void WarmVersions()
+    {
+        foreach (var project in _projects)
+        {
+            var version = Versions.ReadVersion(project, Profiles.GetProfiles(project));
+            if (!string.IsNullOrWhiteSpace(version))
+            {
+                _versions[project.Id] = version;
+            }
+        }
+    }
+
+    private async Task ReloadAsync()
+    {
+        _projects = [.. await Store.GetAllAsync()];
+        _active = Jobs.GetActiveJobs();
+        _healthy = _projects.Count(p => Health.GetCached(p.Id)?.HttpOk == true || Health.GetCached(p.Id)?.PingOk == true);
+        _failed = _projects.Count(p => Jobs.GetJobs(p.Id, 1).FirstOrDefault()?.Status == JobStatus.Failed);
+    }
+
+    private async Task WarmGitAsync()
+    {
+        foreach (var project in _projects)
+        {
+            try
+            {
+                _git[project.Id] = await Git.GetInfoAsync(project.WorkingDirectory);
+            }
+            catch
+            {
+                // git missing or not a repo — cards still render
+            }
+
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task ProbeAllAsync()
+    {
+        _probing = true;
+        try
+        {
+            foreach (var project in _projects.Where(p => p.IsEnabled))
+            {
+                await Health.ProbeAsync(project);
+            }
+        }
+        finally
+        {
+            _probing = false;
+        }
+    }
+
+    private void OnChanged()
+    {
+        _ = InvokeAsync(async () =>
+        {
+            await ReloadAsync();
+            WarmVersions();
+            StateHasChanged();
+        });
+    }
+
+    public void Dispose()
+    {
+        Store.Changed -= OnChanged;
+        Jobs.Changed -= OnChanged;
+        Health.Changed -= OnChanged;
+    }
+}

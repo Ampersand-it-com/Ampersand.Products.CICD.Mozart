@@ -1,0 +1,38 @@
+@if (Result is null)
+{
+    <span class="badge badge-muted">no probe</span>
+}
+else
+{
+    @if (Result.HasHttp)
+    {
+        @if (Result.HttpOk)
+        {
+            <span class="badge badge-ok">HTTP @Result.HttpStatusCode · @Result.HttpElapsedMs ms</span>
+        }
+        else if (Result.HttpStatusCode is not null)
+        {
+            <span class="badge badge-err">HTTP @Result.HttpStatusCode</span>
+        }
+        else
+        {
+            <span class="badge badge-err" title="@Result.HttpError">HTTP down</span>
+        }
+    }
+
+    @if (Result.HasPing)
+    {
+        @if (Result.PingOk)
+        {
+            <span class="badge badge-ok">ping @Result.PingRoundtripMs ms</span>
+        }
+        else
+        {
+            <span class="badge badge-err">ping @Result.PingStatus</span>
+        }
+    }
+}
+
+@code {
+    [Parameter] public HealthResult? Result { get; set; }
+}

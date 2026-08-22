@@ -1,0 +1,14 @@
+﻿<div class="nav-stack">
+    <NavLink class="nav-link" href="" Match="NavLinkMatch.All">Dashboard</NavLink>
+    <NavLink class="nav-link" href="jobs">
+        Jobs
+        @if (ActiveJobCount > 0)
+        {
+            <span class="nav-badge">@ActiveJobCount</span>
+        }
+    </NavLink>
+</div>
+
+@code {
+    [Parameter] public int ActiveJobCount { get; set; }
+}

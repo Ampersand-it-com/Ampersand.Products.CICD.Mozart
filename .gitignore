@@ -1,0 +1,10 @@
+bin/
+obj/
+.vs/
+.idea/
+*.user
+*.suo
+.DS_Store
+src/Ampersand.Mozart.WEB/data/projects.json
+src/Ampersand.Mozart.WEB/data/projects.json.tmp
+src/Ampersand.Mozart.WEB/data/jobs/

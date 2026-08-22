@@ -1,0 +1,119 @@
+@page "/jobs"
+@inject JobManager JobQueue
+@inject JobLogStore Logs
+@implements IDisposable
+
+<PageTitle>Mozart · Jobs</PageTitle>
+
+<div class="page-head">
+    <div>
+        <h1>Jobs</h1>
+        <p class="lede">Logs are written to <span class="mono">@Logs.DirectoryPath</span></p>
+    </div>
+    <button class="btn" @onclick="JobQueue.ClearFinished">Clear finished from memory</button>
+</div>
+
+<div class="card">
+    @if (_rows.Count == 0)
+    {
+        <div class="muted">No jobs yet.</div>
+    }
+    else
+    {
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>When</th>
+                    <th>Project</th>
+                    <th>Job</th>
+                    <th>Status</th>
+                    <th>Duration</th>
+                    <th>Summary</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var row in _rows)
+                {
+                    <tr>
+                        <td>@Formatters.Relative(row.When)</td>
+                        <td><a href="@($"/projects/{row.ProjectId}")">@row.ProjectName</a></td>
+                        <td>@row.Title</td>
+                        <td><StatusBadge Status="row.Status" /></td>
+                        <td>@Formatters.Duration(row.Duration)</td>
+                        <td class="@(row.Status == JobStatus.Failed ? "" : "muted")">@row.Summary</td>
+                        <td>
+                            <a href="@($"/jobs/{row.Id}")">log</a>
+                            @if (row.IsActive)
+                            {
+                                <button class="btn btn-sm btn-danger" style="margin-left:8px" @onclick="() => JobQueue.Cancel(row.Id)">Cancel</button>
+                            }
+                            <a class="btn btn-sm btn-ghost" href="@($"/api/jobs/{row.Id}/log")" target="_blank">file</a>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</div>
+
+@code {
+    private List<Row> _rows = [];
+
+    protected override void OnInitialized()
+    {
+        JobQueue.Changed += OnChanged;
+        Reload();
+    }
+
+    private void Reload()
+    {
+        var live = JobQueue.GetJobs();
+        var seen = live.Select(j => j.Id).ToHashSet();
+        _rows =
+        [
+            .. live.Select(j => new Row(
+                j.Id,
+                j.ProjectId,
+                j.ProjectName,
+                j.Title,
+                j.Status,
+                j.Duration,
+                j.StartedUtc ?? j.CreatedUtc,
+                j.Status == JobStatus.Failed ? j.Diagnose() : j.Summary ?? $"{j.ErrorCount} err · {j.WarningCount} warn",
+                j.IsActive)),
+            .. Logs.List().Where(r => !seen.Contains(r.Id)).Select(r => new Row(
+                r.Id,
+                r.ProjectId,
+                r.ProjectName,
+                r.Title,
+                Enum.TryParse<JobStatus>(r.Status, out var s) ? s : JobStatus.Failed,
+                r.FinishedUtc is { } fin && r.StartedUtc is { } start ? fin - start : null,
+                r.FinishedUtc ?? r.StartedUtc ?? r.CreatedUtc,
+                r.Reason ?? r.Summary,
+                false)),
+        ];
+    }
+
+    private void OnChanged()
+    {
+        _ = InvokeAsync(() =>
+        {
+            Reload();
+            StateHasChanged();
+        });
+    }
+
+    public void Dispose() => JobQueue.Changed -= OnChanged;
+
+    private sealed record Row(
+        string Id,
+        string ProjectId,
+        string ProjectName,
+        string Title,
+        JobStatus Status,
+        TimeSpan? Duration,
+        DateTimeOffset When,
+        string? Summary,
+        bool IsActive);
+}

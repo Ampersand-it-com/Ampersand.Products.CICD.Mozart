@@ -1,0 +1,94 @@
+@inject ProjectOperationsService Ops
+@inject PublishProfileService Profiles
+@inject NavigationManager Nav
+
+<div class="actions">
+    <button class="btn btn-sm" disabled="@Busy" @onclick="() => Run(p => Ops.Restore(p))">Restore</button>
+    <button class="btn btn-sm btn-primary" disabled="@Busy" @onclick="() => Run(p => Ops.Build(p))">Build</button>
+    <button class="btn btn-sm" disabled="@Busy" @onclick="() => Run(p => Ops.Test(p))">Tests</button>
+    <button class="btn btn-sm" disabled="@Busy" @onclick="() => Run(p => Ops.Clean(p))">Clean</button>
+    <button class="btn btn-sm" disabled="@Busy" @onclick="() => Run(p => Ops.GitPull(p))">git pull</button>
+    @if (_profiles.Count > 0)
+    {
+        @if (_profiles.Count > 1)
+        {
+            <select class="btn btn-sm" style="max-width:160px" @bind="_selected" disabled="@Busy">
+                @foreach (var profile in _profiles)
+                {
+                    <option value="@profile.Name">@profile.Name</option>
+                }
+            </select>
+        }
+        <button class="btn btn-sm btn-ok" disabled="@Busy" @onclick="DeployAsync">
+            Deploy @(_selected ?? _profiles[0].Name)
+        </button>
+    }
+    @if (ShowOpen)
+    {
+        <a class="btn btn-sm btn-ghost" href="@($"/projects/{Project.Id}")">Open</a>
+    }
+</div>
+@if (!string.IsNullOrWhiteSpace(_error))
+{
+    <div class="flash flash-err" style="margin-top:8px">@_error</div>
+}
+
+@code {
+    [Parameter, EditorRequired] public CicdProject Project { get; set; } = default!;
+    [Parameter] public bool Busy { get; set; }
+    [Parameter] public bool ShowOpen { get; set; } = true;
+    [Parameter] public bool NavigateToJob { get; set; }
+
+    private IReadOnlyList<PublishProfileInfo> _profiles = [];
+    private string? _selected;
+    private string? _error;
+    private string? _loadedFor;
+
+    protected override void OnParametersSet()
+    {
+        if (_loadedFor == Project.Id && _profiles.Count > 0)
+        {
+            return;
+        }
+
+        _profiles = Profiles.GetProfiles(Project);
+        _loadedFor = Project.Id;
+        _selected = _profiles.FirstOrDefault(p =>
+                string.Equals(p.Name, Project.DefaultPublishProfile, StringComparison.OrdinalIgnoreCase))?.Name
+            ?? _profiles.FirstOrDefault(p => p.Method == PublishMethod.MsDeploy)?.Name
+            ?? _profiles.FirstOrDefault()?.Name;
+    }
+
+    private void Run(Func<CicdProject, Job> start)
+    {
+        _error = null;
+        var job = start(Project);
+        if (NavigateToJob)
+        {
+            Nav.NavigateTo($"/jobs/{job.Id}");
+        }
+    }
+
+    private async Task DeployAsync()
+    {
+        var name = _selected ?? _profiles.FirstOrDefault()?.Name;
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return;
+        }
+
+        _error = null;
+        try
+        {
+            var job = await Ops.PublishAsync(Project, name);
+            if (NavigateToJob)
+            {
+                Nav.NavigateTo($"/jobs/{job.Id}");
+            }
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+    }
+}

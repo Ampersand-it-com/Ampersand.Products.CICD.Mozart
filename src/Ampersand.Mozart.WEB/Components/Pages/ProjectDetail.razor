@@ -1,0 +1,652 @@
+@page "/projects/{Id}"
+@inject ProjectStore Store
+@inject JobManager Jobs
+@inject HealthProbeService Health
+@inject GitService Git
+@inject ProjectInspector Inspector
+@inject PublishProfileService Profiles
+@inject ProjectOperationsService Ops
+@inject VersionBumpService Versions
+@inject NavigationManager Nav
+@implements IDisposable
+
+<PageTitle>Mozart · @(_project?.DisplayName ?? "Project")</PageTitle>
+
+@if (_missing)
+{
+    <div class="empty">Project not found. <a href="/">Back to dashboard</a></div>
+}
+else if (_project is not null)
+{
+    <div class="page-head">
+        <div>
+            <h1>@_project.DisplayName</h1>
+            <p class="lede path">@_project.ProjectPath</p>
+        </div>
+        <div class="actions">
+            <button class="btn" @onclick="RefreshAsync">Refresh</button>
+            <button class="btn" @onclick="ProbeAsync" disabled="@_probing">Ping / health</button>
+            <button class="btn btn-danger" @onclick="RemoveAsync">Remove from panel</button>
+        </div>
+    </div>
+
+    <div class="project-meta" style="margin-bottom:18px">
+        <HealthBadge Result="_health" />
+        @if (_git?.IsRepository == true)
+        {
+            <span class="badge">@_git.Branch</span>
+            <span class="badge @(_git.IsClean ? "badge-ok" : "badge-warn")">
+                @(_git.IsClean ? "clean" : $"{_git.DirtyFiles} dirty")
+            </span>
+            @if (_git.Ahead > 0 || _git.Behind > 0)
+            {
+                <span class="badge badge-warn">↑@_git.Ahead ↓@_git.Behind</span>
+            }
+        }
+        @if (_info is not null)
+        {
+            <span class="badge badge-muted">@_info.TargetFramework</span>
+            @if (_info.IsWebProject) { <span class="badge">web</span> }
+            @if (_info.IsTestProject) { <span class="badge">tests</span> }
+        }
+    </div>
+
+    <ProjectActions Project="_project" Busy="_busy" NavigateToJob="true" ShowOpen="false" />
+
+    <div class="tabs" style="margin-top:22px">
+        <button class="tab @(_tab=="info"?"active":"")" @onclick='() => _tab="info"'>Info</button>
+        <button class="tab @(_tab=="profiles"?"active":"")" @onclick='() => _tab="profiles"'>Publish profiles</button>
+        <button class="tab @(_tab=="jobs"?"active":"")" @onclick='() => _tab="jobs"'>Jobs</button>
+        <button class="tab @(_tab=="settings"?"active":"")" @onclick='() => _tab="settings"'>Settings</button>
+    </div>
+
+    @if (_tab == "info")
+    {
+        <div class="grid grid-2">
+            <div class="card">
+                <div class="card-head"><h3>Project</h3></div>
+                <dl class="kv">
+                    <dt>Name</dt><dd>@_project.DisplayName</dd>
+                    <dt>Path</dt><dd class="mono">@_project.ProjectPath</dd>
+                    <dt>Exists</dt><dd>@(_info?.Exists == true ? "yes" : "no")</dd>
+                    <dt>SDK</dt><dd>@(_info?.Sdk ?? "—")</dd>
+                    <dt>TFM</dt><dd>@(_info?.TargetFramework ?? "—")</dd>
+                    <dt>Output</dt><dd>@(_info?.OutputType ?? "—")</dd>
+                    <dt>Sources</dt>
+                    <dd>@(_info is null ? "—" : $"{_info.SourceFileCount} files · {Formatters.Bytes(_info.SourceSizeBytes)}")</dd>
+                    <dt>Last write</dt><dd>@Formatters.Relative(_info?.LastWriteUtc)</dd>
+                    <dt>Last deploy</dt><dd>@Formatters.Relative(_project.LastDeployUtc)</dd>
+                    <dt>Version</dt><dd>@(_version ?? _project.LastVersion ?? "—")</dd>
+                </dl>
+                @if (_info?.SolutionProjects is { Count: > 0 })
+                {
+                    <div class="muted" style="margin-top:12px">Solution projects</div>
+                    <div class="project-meta" style="margin-top:6px">
+                        @foreach (var name in _info.SolutionProjects)
+                        {
+                            <span class="badge badge-muted">@name</span>
+                        }
+                    </div>
+                }
+            </div>
+            <div class="card">
+                <div class="card-head"><h3>Git</h3></div>
+                @if (_git?.IsRepository == true)
+                {
+                    <dl class="kv">
+                        <dt>Branch</dt><dd>@_git.Branch</dd>
+                        <dt>Commit</dt><dd class="mono">@_git.CommitHash</dd>
+                        <dt>Author</dt><dd>@_git.CommitAuthor</dd>
+                        <dt>Subject</dt><dd>@_git.CommitSubject</dd>
+                        <dt>When</dt><dd>@Formatters.Relative(_git.CommitDate)</dd>
+                        <dt>Remote</dt><dd class="mono">@_git.Remote</dd>
+                        <dt>Working tree</dt><dd>@(_git.IsClean ? "clean" : $"{_git.DirtyFiles} changed files")</dd>
+                    </dl>
+                }
+                else
+                {
+                    <div class="muted">@(_git?.Error ?? "Not a git repository")</div>
+                }
+            </div>
+            <div class="card">
+                <div class="card-head"><h3>Health</h3></div>
+                @if (_health is null)
+                {
+                    <div class="muted">No probe yet. Set Health URL / Ping host in Settings, then press Ping.</div>
+                }
+                else
+                {
+                    <dl class="kv">
+                        <dt>Checked</dt><dd>@Formatters.Relative(_health.CheckedUtc)</dd>
+                        <dt>URL</dt><dd class="mono">@(_health.Url ?? "—")</dd>
+                        <dt>HTTP</dt>
+                        <dd>
+                            @if (_health.HttpStatusCode is not null)
+                            {
+                                @($"{_health.HttpStatusCode} / {_health.HttpElapsedMs} ms")
+                            }
+                            else
+                            {
+                                @(_health.HttpError ?? "—")
+                            }
+                        </dd>
+                        <dt>Ping host</dt><dd class="mono">@(_health.PingHost ?? "—")</dd>
+                        <dt>Ping</dt>
+                        <dd>@(_health.PingStatus ?? "—") @(_health.PingRoundtripMs is null ? "" : $"· {_health.PingRoundtripMs} ms")</dd>
+                    </dl>
+                }
+            </div>
+            <div class="card">
+                <div class="card-head"><h3>Quick custom command</h3></div>
+                <div class="field">
+                    <label>dotnet arguments (working dir = project folder)</label>
+                    <input @bind="_custom" placeholder="pack -c Release" />
+                </div>
+                <button class="btn" @onclick="RunCustom" disabled="@string.IsNullOrWhiteSpace(_custom)">Run</button>
+            </div>
+        </div>
+    }
+    else if (_tab == "profiles")
+    {
+        <div class="grid grid-2">
+            <div class="card">
+                <div class="card-head">
+                    <h3>Profiles on disk</h3>
+                    <button class="btn btn-sm btn-primary" @onclick="StartNewProfile">New profile</button>
+                </div>
+                @if (_profiles.Count == 0)
+                {
+                    <div class="muted">No .pubxml files yet. Create a Folder or Web Deploy profile.</div>
+                }
+                else
+                {
+                    <table class="table">
+                        <thead>
+                            <tr><th>Name</th><th>Method</th><th>Target</th><th></th></tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var profile in _profiles)
+                            {
+                                <tr>
+                                    <td>
+                                        <strong>@profile.Name</strong>
+                                        @if (string.Equals(_project.DefaultPublishProfile, profile.Name, StringComparison.OrdinalIgnoreCase))
+                                        {
+                                            <span class="badge badge-ok">default</span>
+                                        }
+                                    </td>
+                                    <td>@profile.MethodLabel</td>
+                                    <td class="path">@profile.TargetLabel</td>
+                                    <td>
+                                        <div class="actions">
+                                            <button class="btn btn-sm" @onclick="() => Edit(profile)">Edit</button>
+                                            <button class="btn btn-sm btn-ok" @onclick="() => DeployAsync(profile.Name)">Deploy</button>
+                                            <button class="btn btn-sm" @onclick="() => SetDefaultAsync(profile.Name)">Default</button>
+                                            <button class="btn btn-sm btn-danger" @onclick="() => DeleteProfile(profile)">Delete</button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+                @if (!string.IsNullOrWhiteSpace(_profileError))
+                {
+                    <div class="flash flash-err" style="margin-top:12px">@_profileError</div>
+                }
+            </div>
+
+            <div class="card">
+                <div class="card-head"><h3>@(_editor.FilePath is { Length: > 0 } ? "Edit profile" : "New profile")</h3></div>
+                <div class="field">
+                    <label>Owner project</label>
+                    <select @bind="_editor.OwnerProjectPath">
+                        @foreach (var file in _projectFiles)
+                        {
+                            <option value="@file">@file</option>
+                        }
+                    </select>
+                </div>
+                <div class="field">
+                    <label>Name</label>
+                    <input @bind="_editor.Name" />
+                </div>
+                <div class="field">
+                    <label>Method</label>
+                    <select @bind="_method">
+                        <option value="FileSystem">Folder</option>
+                        <option value="MsDeploy">Web Deploy</option>
+                    </select>
+                </div>
+                <div class="field">
+                    <label>Configuration</label>
+                    <input @bind="_editor.Configuration" />
+                </div>
+                <div class="field">
+                    <label>Target framework (optional)</label>
+                    <input @bind="_editor.TargetFramework" />
+                </div>
+                <div class="field">
+                    <label>Runtime identifier (optional)</label>
+                    <input @bind="_editor.RuntimeIdentifier" placeholder="win-x64" />
+                </div>
+                @if (_method == "FileSystem")
+                {
+                    <div class="field">
+                        <label>Publish folder</label>
+                        <input @bind="_editor.PublishDirectory" placeholder="C:\publish\site" />
+                    </div>
+                }
+                else
+                {
+                    <div class="field">
+                        <label>MSDeploy service URL</label>
+                        <input @bind="_editor.MsDeployServiceUrl" placeholder="https://server:8172/msdeploy.axd" />
+                    </div>
+                    <div class="field">
+                        <label>IIS app path</label>
+                        <input @bind="_editor.DeployIisAppPath" placeholder="Default Web Site/MyApp" />
+                    </div>
+                    <div class="field">
+                        <label>User name</label>
+                        <input @bind="_editor.UserName" />
+                    </div>
+                    <div class="field">
+                        <label>Password (stored in Mozart, not in .pubxml)</label>
+                        <input type="password" @bind="_secret" autocomplete="off" />
+                    </div>
+                    <div class="field">
+                        <label>Site URL after publish (also used as health URL)</label>
+                        <input @bind="_editor.SiteUrlToLaunchAfterPublish" placeholder="https://app.example.com" />
+                    </div>
+                }
+                <div class="actions">
+                    <button class="btn btn-primary" @onclick="SaveProfile">Save profile</button>
+                    @if (!string.IsNullOrWhiteSpace(_editor.FilePath))
+                    {
+                        <button class="btn" @onclick="ToggleRaw">@(_showRaw ? "Hide XML" : "Raw XML")</button>
+                    }
+                </div>
+                @if (_showRaw && !string.IsNullOrWhiteSpace(_editor.FilePath))
+                {
+                    <div class="field" style="margin-top:12px">
+                        <label>Raw .pubxml</label>
+                        <textarea @bind="_rawXml" rows="16"></textarea>
+                    </div>
+                    <button class="btn" @onclick="SaveRaw">Save XML</button>
+                }
+            </div>
+        </div>
+    }
+    else if (_tab == "jobs")
+    {
+        <div class="card">
+            @if (_jobs.Count == 0)
+            {
+                <div class="muted">No jobs for this project yet.</div>
+            }
+            else
+            {
+                <table class="table">
+                    <thead>
+                        <tr><th>When</th><th>Job</th><th>Status</th><th>Duration</th><th></th></tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var job in _jobs)
+                        {
+                            <tr>
+                                <td>@Formatters.Relative(job.StartedUtc ?? job.CreatedUtc)</td>
+                                <td>@job.Title</td>
+                                <td><StatusBadge Status="job.Status" /></td>
+                                <td>@Formatters.Duration(job.Duration)</td>
+                                <td><a href="@($"/jobs/{job.Id}")">log</a></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </div>
+    }
+    else
+    {
+        <div class="card" style="max-width:720px">
+            <div class="field">
+                <label>Display name</label>
+                <input @bind="_project.Name" />
+            </div>
+            <div class="field">
+                <label>Project / solution path</label>
+                <input @bind="_project.ProjectPath" />
+            </div>
+            <div class="field">
+                <label>Test path (optional, defaults to project path)</label>
+                <input @bind="_project.TestPath" />
+            </div>
+            <div class="field">
+                <label>Configuration</label>
+                <input @bind="_project.Configuration" />
+            </div>
+            <div class="field">
+                <label>Default publish profile</label>
+                <input @bind="_project.DefaultPublishProfile" />
+            </div>
+            <div class="field">
+                <label>Web Deploy password (if VS EncryptedPassword is not used)</label>
+                <input type="password" @bind="_settingsPassword" autocomplete="off" />
+            </div>
+            <div class="field">
+                <label>Health URL</label>
+                <input @bind="_project.HealthUrl" placeholder="https://localhost:5001/health" />
+            </div>
+            <div class="field">
+                <label>Ping host (optional, taken from Health URL)</label>
+                <input @bind="_project.PingHost" />
+            </div>
+            <div class="field">
+                <label>Extra dotnet arguments</label>
+                <input @bind="_project.ExtraArguments" placeholder="--verbosity minimal" />
+            </div>
+            <div class="field">
+                <label>Notes</label>
+                <textarea @bind="_project.Notes"></textarea>
+            </div>
+            <label class="muted" style="display:flex;gap:8px;align-items:center;margin-bottom:12px">
+                <input type="checkbox" @bind="_project.IsEnabled" /> Enabled (included in ping-all)
+            </label>
+            <button class="btn btn-primary" @onclick="SaveSettingsAsync">Save settings</button>
+            @if (!string.IsNullOrWhiteSpace(_saved))
+            {
+                <div class="flash flash-ok" style="margin-top:12px">@_saved</div>
+            }
+        </div>
+    }
+}
+
+@code {
+    [Parameter] public string Id { get; set; } = "";
+
+    private CicdProject? _project;
+    private bool _missing;
+    private string _tab = "info";
+    private ProjectInfo? _info;
+    private GitInfo? _git;
+    private HealthResult? _health;
+    private IReadOnlyList<Job> _jobs = [];
+    private IReadOnlyList<PublishProfileInfo> _profiles = [];
+    private List<string> _projectFiles = [];
+    private PublishProfileInfo _editor = NewEditor();
+    private string _method = "FileSystem";
+    private string? _secret;
+    private string? _rawXml;
+    private bool _showRaw;
+    private string? _custom;
+    private string? _profileError;
+    private string? _saved;
+    private bool _probing;
+    private bool _busy;
+    private string? _version;
+    private string? _settingsPassword;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        Jobs.Changed -= OnJobsChanged;
+        Jobs.Changed += OnJobsChanged;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _project = await Store.GetAsync(Id);
+        _missing = _project is null;
+        if (_project is null)
+        {
+            return;
+        }
+
+        _info = Inspector.Inspect(_project.ProjectPath);
+        _projectFiles = [.. SolutionReader.GetProjectFiles(_project.ProjectPath)];
+        if (_projectFiles.Count == 0 && File.Exists(_project.ProjectPath))
+        {
+            _projectFiles = [_project.ProjectPath];
+        }
+
+        _profiles = Profiles.GetProfiles(_project);
+        _version = Versions.ReadVersion(_project, _profiles);
+        _jobs = Jobs.GetJobs(_project.Id, 40);
+        _health = Health.GetCached(_project.Id);
+        _busy = Jobs.GetActiveJobs().Any(j => j.ProjectId == _project.Id);
+
+        try
+        {
+            _git = await Git.GetInfoAsync(_project.WorkingDirectory);
+        }
+        catch
+        {
+            _git = new GitInfo { Error = "git is not available" };
+        }
+
+        if (string.IsNullOrWhiteSpace(_editor.OwnerProjectPath) && _projectFiles.Count > 0)
+        {
+            _editor.OwnerProjectPath = _projectFiles[0];
+        }
+    }
+
+    private async Task RefreshAsync() => await LoadAsync();
+
+    private async Task ProbeAsync()
+    {
+        if (_project is null)
+        {
+            return;
+        }
+
+        _probing = true;
+        try
+        {
+            _health = await Health.ProbeAsync(_project);
+        }
+        finally
+        {
+            _probing = false;
+        }
+    }
+
+    private async Task SaveSettingsAsync()
+    {
+        if (_project is null)
+        {
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(_settingsPassword) &&
+            !string.IsNullOrWhiteSpace(_project.DefaultPublishProfile))
+        {
+            _project.PublishSecrets[_project.DefaultPublishProfile] = _settingsPassword;
+        }
+
+        await Store.SaveAsync(_project);
+        _saved = "Saved.";
+        _settingsPassword = null;
+    }
+
+    private void RunCustom()
+    {
+        if (_project is null || string.IsNullOrWhiteSpace(_custom))
+        {
+            return;
+        }
+
+        var job = Ops.Custom(_project, _custom);
+        Nav.NavigateTo($"/jobs/{job.Id}");
+    }
+
+    private void StartNewProfile()
+    {
+        _editor = NewEditor();
+        if (_projectFiles.Count > 0)
+        {
+            _editor.OwnerProjectPath = _projectFiles[0];
+        }
+
+        _method = "FileSystem";
+        _secret = null;
+        _showRaw = false;
+    }
+
+    private void Edit(PublishProfileInfo profile)
+    {
+        _editor = new PublishProfileInfo
+        {
+            Name = profile.Name,
+            FilePath = profile.FilePath,
+            OwnerProjectPath = profile.OwnerProjectPath,
+            Method = profile.Method,
+            Configuration = profile.Configuration,
+            TargetFramework = profile.TargetFramework,
+            RuntimeIdentifier = profile.RuntimeIdentifier,
+            SelfContained = profile.SelfContained,
+            PublishDirectory = profile.PublishDirectory,
+            MsDeployServiceUrl = profile.MsDeployServiceUrl,
+            DeployIisAppPath = profile.DeployIisAppPath,
+            UserName = profile.UserName,
+            AllowUntrustedCertificate = profile.AllowUntrustedCertificate,
+            SiteUrlToLaunchAfterPublish = profile.SiteUrlToLaunchAfterPublish,
+            RawXml = profile.RawXml,
+        };
+        _method = profile.Method == PublishMethod.MsDeploy ? "MsDeploy" : "FileSystem";
+        _rawXml = profile.RawXml;
+        _secret = _project?.PublishSecrets.GetValueOrDefault(profile.Name);
+        _showRaw = false;
+    }
+
+    private void SaveProfile()
+    {
+        if (_project is null)
+        {
+            return;
+        }
+
+        _profileError = null;
+        try
+        {
+            _editor.Method = _method == "MsDeploy" ? PublishMethod.MsDeploy : PublishMethod.FileSystem;
+            Profiles.Save(_editor);
+            if (!string.IsNullOrEmpty(_secret))
+            {
+                _project.PublishSecrets[_editor.Name] = _secret;
+            }
+
+            if (string.IsNullOrWhiteSpace(_project.DefaultPublishProfile))
+            {
+                _project.DefaultPublishProfile = _editor.Name;
+            }
+
+            if (!string.IsNullOrWhiteSpace(_editor.SiteUrlToLaunchAfterPublish) &&
+                string.IsNullOrWhiteSpace(_project.HealthUrl))
+            {
+                _project.HealthUrl = _editor.SiteUrlToLaunchAfterPublish;
+            }
+
+            _ = Store.SaveAsync(_project);
+            _profiles = Profiles.GetProfiles(_project);
+        }
+        catch (Exception ex)
+        {
+            _profileError = ex.Message;
+        }
+    }
+
+    private void SaveRaw()
+    {
+        if (string.IsNullOrWhiteSpace(_editor.FilePath) || _rawXml is null)
+        {
+            return;
+        }
+
+        _profileError = null;
+        try
+        {
+            Profiles.SaveRaw(_editor.FilePath, _rawXml);
+            if (_project is not null)
+            {
+                _profiles = Profiles.GetProfiles(_project);
+            }
+        }
+        catch (Exception ex)
+        {
+            _profileError = ex.Message;
+        }
+    }
+
+    private void DeleteProfile(PublishProfileInfo profile)
+    {
+        Profiles.Delete(profile.FilePath);
+        if (_project is not null)
+        {
+            _profiles = Profiles.GetProfiles(_project);
+        }
+    }
+
+    private async Task SetDefaultAsync(string name)
+    {
+        if (_project is null)
+        {
+            return;
+        }
+
+        _project.DefaultPublishProfile = name;
+        await Store.SaveAsync(_project);
+    }
+
+    private async Task DeployAsync(string name)
+    {
+        if (_project is null)
+        {
+            return;
+        }
+
+        _profileError = null;
+        try
+        {
+            var job = await Ops.PublishAsync(_project, name);
+            Nav.NavigateTo($"/jobs/{job.Id}");
+        }
+        catch (Exception ex)
+        {
+            _profileError = ex.Message;
+        }
+    }
+
+    private async Task RemoveAsync()
+    {
+        await Store.DeleteAsync(Id);
+        Nav.NavigateTo("/");
+    }
+
+    private void ToggleRaw() => _showRaw = !_showRaw;
+
+    private void OnJobsChanged()
+    {
+        _ = InvokeAsync(async () =>
+        {
+            if (_project is not null)
+            {
+                _jobs = Jobs.GetJobs(_project.Id, 40);
+                _busy = Jobs.GetActiveJobs().Any(j => j.ProjectId == _project.Id);
+            }
+
+            StateHasChanged();
+            await Task.CompletedTask;
+        });
+    }
+
+    private static PublishProfileInfo NewEditor() => new()
+    {
+        Name = "FolderProfile",
+        Method = PublishMethod.FileSystem,
+        Configuration = "Release",
+        PublishDirectory = @"C:\publish",
+    };
+
+    public void Dispose() => Jobs.Changed -= OnJobsChanged;
+}

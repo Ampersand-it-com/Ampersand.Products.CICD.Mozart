@@ -1,0 +1,24 @@
+@if (Status is JobStatus.Running)
+{
+    <span class="badge badge-run">running</span>
+}
+else if (Status is JobStatus.Succeeded)
+{
+    <span class="badge badge-ok">ok</span>
+}
+else if (Status is JobStatus.Failed)
+{
+    <span class="badge badge-err">failed</span>
+}
+else if (Status is JobStatus.Canceled)
+{
+    <span class="badge badge-warn">canceled</span>
+}
+else
+{
+    <span class="badge badge-muted">queued</span>
+}
+
+@code {
+    [Parameter] public JobStatus Status { get; set; }
+}

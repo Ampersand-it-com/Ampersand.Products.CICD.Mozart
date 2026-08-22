@@ -1,0 +1,20 @@
+@page "/projects/add"
+@inject NavigationManager Nav
+
+<PageTitle>Mozart · Add projects</PageTitle>
+
+<div class="page-head">
+    <div>
+        <h1>Add projects</h1>
+        <p class="lede">Windows file dialog — pick .sln / .csproj (multi-select).</p>
+    </div>
+    <AddProjectButton OnAdded="GoHome" />
+</div>
+
+<div class="empty">
+    Press <strong>Add projects</strong> and choose files in the system dialog.
+</div>
+
+@code {
+    private void GoHome() => Nav.NavigateTo("/");
+}
