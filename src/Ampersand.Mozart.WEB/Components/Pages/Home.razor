@@ -19,6 +19,7 @@
     <div class="actions">
         <AddProjectButton OnAdded="AfterAddedAsync" />
         <button class="btn btn-ok" @onclick="DeployAllAsync" disabled="@(_deployingAll || _projects.Count == 0)">Deploy all</button>
+        <CommitAllButton OnResult="OnCommitAllResult" />
         <button class="btn" @onclick="ProbeAllAsync" disabled="@_probing">Ping all</button>
     </div>
 </div>
@@ -26,6 +27,10 @@
 @if (!string.IsNullOrWhiteSpace(_deployAllMessage))
 {
     <div class="flash @(_deployAllError ? "flash-err" : "flash-ok")" style="margin-bottom:16px">@_deployAllMessage</div>
+}
+@if (!string.IsNullOrWhiteSpace(_commitAllMessage))
+{
+    <div class="flash @(_commitAllError ? "flash-err" : "flash-ok")" style="margin-bottom:16px">@_commitAllMessage</div>
 }
 
 <div class="grid grid-4" style="margin-bottom:20px">
@@ -142,7 +147,9 @@ else
     private bool _probing;
     private bool _deployingAll;
     private string? _deployAllMessage;
+    private string? _commitAllMessage;
     private bool _deployAllError;
+    private bool _commitAllError;
     private int _healthy;
     private int _failed;
 
@@ -263,6 +270,12 @@ else
         {
             _deployingAll = false;
         }
+    }
+
+    private void OnCommitAllResult(CommitAllResultMessage result)
+    {
+        _commitAllMessage = result.Text;
+        _commitAllError = result.IsError;
     }
 
     private void OnChanged()

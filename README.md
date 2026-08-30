@@ -13,7 +13,7 @@ Opens `http://localhost:5258`.
 ## What it does
 
 - **Add projects** — Windows file dialog (`.sln` / `.csproj`, multi-select).
-- **Dashboard** — cards with git branch, last job, health/ping, one-click actions. **Deploy all** queues Web Deploy for every enabled project (Storage → Identity → …).
+- **Dashboard** — cards with git branch, last job, health/ping, one-click actions. **Deploy all** queues Web Deploy for every enabled project (Storage → Identity → …). **Commit all** queues `git add -A` → commit → push for repos with local changes or unpushed commits.
 - **Project page**
   - Info: SDK, TFM, sources, git (branch / dirty / ahead-behind), last deploy.
   - Publish profiles: create Folder or Web Deploy `.pubxml` under `Properties/PublishProfiles`, edit fields or raw XML, set default, deploy.
@@ -27,6 +27,7 @@ Opens `http://localhost:5258`.
 
 - **Folder / Web Deploy** → `dotnet publish` with the full `.pubxml` path. Empty profiles are skipped. Web Deploy that only builds locally is marked failed. Password: Mozart secrets or the existing `.pubxml.user`.
 - **Deploy all** (dashboard button) — same as `scripts/deploy-all.ps1`: MSDeploy profiles only, priority order Storage → Identity → clients. Progress on **Jobs**.
+- **Commit all** / per-project **commit+push** — `git add -A`, auto message `Mozart: {project} @ {yyyy-MM-dd HH:mm}`, then `git push`. Skips clean repos with nothing to push.
 
 ## Config
 

@@ -1,0 +1,89 @@
+@inject ProjectStore Store
+@inject ProjectOperationsService Ops
+@inject NavigationManager Nav
+
+<button class="@Css"
+        disabled="@_busy"
+        title="git add -A → commit (auto message) → push for every repo with local changes or unpushed commits"
+        @onclick="RunAsync">
+    @if (_busy)
+    {
+        <span>Committing…</span>
+    }
+    else
+    {
+        @Label
+    }
+</button>
+@if (ShowMessage && !string.IsNullOrWhiteSpace(_message))
+{
+    <div class="flash @(_error ? "flash-err" : "flash-ok")" style="margin-top:8px">@_message</div>
+}
+
+@code {
+    [Parameter] public string Label { get; set; } = "Commit + push all";
+    [Parameter] public string Css { get; set; } = "btn btn-ok";
+    [Parameter] public bool NavigateToJobsOnSuccess { get; set; } = true;
+    [Parameter] public bool ShowMessage { get; set; }
+    [Parameter] public EventCallback<CommitAllResultMessage> OnResult { get; set; }
+
+    private bool _busy;
+    private string? _message;
+    private bool _error;
+
+    private async Task RunAsync()
+    {
+        _busy = true;
+        _message = null;
+        _error = false;
+        try
+        {
+            var projects = await Store.GetAllAsync();
+            if (projects.Count == 0)
+            {
+                await ReportAsync("No projects registered.", true);
+                return;
+            }
+
+            var result = await Ops.CommitAllAsync(projects);
+            if (result.Jobs.Count == 0)
+            {
+                var text = result.Skipped.Count == 0
+                    ? "No enabled projects with uncommitted or unpushed changes."
+                    : string.Join(" · ", result.Skipped);
+                await ReportAsync(text, true);
+                return;
+            }
+
+            var message = $"Queued {result.Jobs.Count} commit+push job(s).";
+            if (result.Skipped.Count > 0)
+            {
+                message += $" Skipped {result.Skipped.Count}: {string.Join("; ", result.Skipped)}";
+            }
+
+            await ReportAsync(message, false);
+            if (NavigateToJobsOnSuccess)
+            {
+                Nav.NavigateTo("/jobs");
+            }
+        }
+        catch (Exception ex)
+        {
+            await ReportAsync(ex.Message, true);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task ReportAsync(string text, bool isError)
+    {
+        _message = text;
+        _error = isError;
+        if (OnResult.HasDelegate)
+        {
+            await OnResult.InvokeAsync(new CommitAllResultMessage(text, isError));
+        }
+    }
+}

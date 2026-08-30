@@ -10,7 +10,10 @@
         <h1>Jobs</h1>
         <p class="lede">Logs are written to <span class="mono">@Logs.DirectoryPath</span></p>
     </div>
-    <button class="btn" @onclick="JobQueue.ClearFinished">Clear finished from memory</button>
+    <div class="actions">
+        <CommitAllButton ShowMessage="true" />
+        <button class="btn" @onclick="JobQueue.ClearFinished">Clear finished from memory</button>
+    </div>
 </div>
 
 <div class="card">

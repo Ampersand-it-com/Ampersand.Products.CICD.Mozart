@@ -13,6 +13,7 @@ public sealed class ProjectOperationsService(
     VersionBumpService versions,
     PublishCredentialService credentials,
     MozartErrorLog errorLog,
+    GitService git,
     IOptions<MozartOptions> options)
 {
     private const string PasswordMask = "***";
@@ -51,6 +52,61 @@ public sealed class ProjectOperationsService(
 
     public Job GitPull(CicdProject project) =>
         Enqueue(project, JobKind.GitPull, "git pull --ff-only", _options.GitPath, "pull --ff-only");
+
+    public Job GitCommitPush(CicdProject project)
+    {
+        var message = GitCommitService.BuildCommitMessage(project.DisplayName);
+        return jobs.Enqueue(new Job
+        {
+            ProjectId = project.Id,
+            ProjectName = project.DisplayName,
+            Kind = JobKind.GitCommitPush,
+            Title = "git commit + push",
+            FileName = _options.GitPath,
+            Arguments = message,
+            DisplayArguments = message,
+            WorkingDirectory = project.WorkingDirectory,
+        });
+    }
+
+    /// <summary>
+    /// Queues git commit+push for enabled repos with local changes or unpushed commits.
+    /// </summary>
+    public async Task<DeployAllResult> CommitAllAsync(IReadOnlyList<CicdProject> projects)
+    {
+        var jobs = new List<Job>();
+        var skipped = new List<string>();
+
+        foreach (var project in projects
+                     .Where(p => p.IsEnabled)
+                     .OrderBy(p => p.DisplayName, StringComparer.OrdinalIgnoreCase))
+        {
+            try
+            {
+                var info = await git.GetInfoAsync(project.WorkingDirectory);
+                if (!info.IsRepository)
+                {
+                    skipped.Add($"{project.DisplayName}: not a git repo");
+                    continue;
+                }
+
+                if (info.IsClean && info.Ahead <= 0)
+                {
+                    skipped.Add($"{project.DisplayName}: clean");
+                    continue;
+                }
+
+                jobs.Add(GitCommitPush(project));
+            }
+            catch (Exception ex)
+            {
+                skipped.Add($"{project.DisplayName}: {ex.Message}");
+                errorLog.Write("CommitAll", $"Could not queue commit for {project.DisplayName}", ex);
+            }
+        }
+
+        return new DeployAllResult(jobs, skipped);
+    }
 
     public Job Custom(CicdProject project, string arguments) =>
         Enqueue(project, JobKind.Custom, $"dotnet {arguments}", _options.DotnetPath, arguments);

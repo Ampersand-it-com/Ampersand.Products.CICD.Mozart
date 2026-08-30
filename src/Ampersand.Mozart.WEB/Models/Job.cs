@@ -10,6 +10,7 @@ public enum JobKind
     Publish,
     Clean,
     GitPull,
+    GitCommitPush,
     Custom,
 }
 

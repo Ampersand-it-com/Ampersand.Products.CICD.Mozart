@@ -6,7 +6,14 @@ namespace Ampersand.Mozart.WEB.Services;
 /// <summary>
 /// Drains the job queue, honouring the configured parallelism limit.
 /// </summary>
-public sealed class JobWorker(JobManager jobs, ProcessRunner runner, ProjectStore store, JobLogStore logs, MozartErrorLog errorLog, ILogger<JobWorker> logger) : BackgroundService
+public sealed class JobWorker(
+    JobManager jobs,
+    ProcessRunner runner,
+    ProjectStore store,
+    JobLogStore logs,
+    MozartErrorLog errorLog,
+    GitCommitService gitCommit,
+    ILogger<JobWorker> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -53,33 +60,65 @@ public sealed class JobWorker(JobManager jobs, ProcessRunner runner, ProjectStor
 
         try
         {
-            var exitCode = await runner.StreamAsync(
-                job.FileName,
-                job.Arguments,
-                job.WorkingDirectory,
-                (severity, line) =>
-                {
-                    job.Append(severity, line);
-                    logs.Append(job, severity, line);
-                    if (severity == LogSeverity.Error)
+            int exitCode;
+            if (job.Kind == JobKind.GitCommitPush)
+            {
+                exitCode = await gitCommit.ExecuteAsync(
+                    job,
+                    runner,
+                    (severity, line) =>
                     {
-                        job.ErrorCount++;
-                    }
-                    else if (severity == LogSeverity.Warning)
-                    {
-                        job.WarningCount++;
-                    }
+                        job.Append(severity, line);
+                        logs.Append(job, severity, line);
+                        if (severity == LogSeverity.Error)
+                        {
+                            job.ErrorCount++;
+                        }
+                        else if (severity == LogSeverity.Warning)
+                        {
+                            job.WarningCount++;
+                        }
 
-                    CaptureSummary(job, line);
+                        CaptureSummary(job, line);
 
-                    // Coalesce UI notifications so a chatty build does not flood the circuit.
-                    if (DateTimeOffset.UtcNow - lastNotify > TimeSpan.FromMilliseconds(400))
+                        if (DateTimeOffset.UtcNow - lastNotify > TimeSpan.FromMilliseconds(400))
+                        {
+                            lastNotify = DateTimeOffset.UtcNow;
+                            jobs.NotifyChanged();
+                        }
+                    },
+                    cts.Token);
+            }
+            else
+            {
+                exitCode = await runner.StreamAsync(
+                    job.FileName,
+                    job.Arguments,
+                    job.WorkingDirectory,
+                    (severity, line) =>
                     {
-                        lastNotify = DateTimeOffset.UtcNow;
-                        jobs.NotifyChanged();
-                    }
-                },
-                cts.Token);
+                        job.Append(severity, line);
+                        logs.Append(job, severity, line);
+                        if (severity == LogSeverity.Error)
+                        {
+                            job.ErrorCount++;
+                        }
+                        else if (severity == LogSeverity.Warning)
+                        {
+                            job.WarningCount++;
+                        }
+
+                        CaptureSummary(job, line);
+
+                        // Coalesce UI notifications so a chatty build does not flood the circuit.
+                        if (DateTimeOffset.UtcNow - lastNotify > TimeSpan.FromMilliseconds(400))
+                        {
+                            lastNotify = DateTimeOffset.UtcNow;
+                            jobs.NotifyChanged();
+                        }
+                    },
+                    cts.Token);
+            }
 
             job.ExitCode = exitCode;
             job.Status = exitCode == 0 ? JobStatus.Succeeded : JobStatus.Failed;

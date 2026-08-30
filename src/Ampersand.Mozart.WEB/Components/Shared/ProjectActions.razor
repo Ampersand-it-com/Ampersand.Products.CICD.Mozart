@@ -8,6 +8,7 @@
     <button class="btn btn-sm" disabled="@Busy" @onclick="() => Run(p => Ops.Test(p))">Tests</button>
     <button class="btn btn-sm" disabled="@Busy" @onclick="() => Run(p => Ops.Clean(p))">Clean</button>
     <button class="btn btn-sm" disabled="@Busy" @onclick="() => Run(p => Ops.GitPull(p))">git pull</button>
+    <button class="btn btn-sm" disabled="@Busy" @onclick="() => Run(p => Ops.GitCommitPush(p))">commit+push</button>
     @if (_profiles.Count > 0)
     {
         @if (_profiles.Count > 1)
