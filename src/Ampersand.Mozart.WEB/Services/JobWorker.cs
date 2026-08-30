@@ -6,7 +6,7 @@ namespace Ampersand.Mozart.WEB.Services;
 /// <summary>
 /// Drains the job queue, honouring the configured parallelism limit.
 /// </summary>
-public sealed class JobWorker(JobManager jobs, ProcessRunner runner, ProjectStore store, JobLogStore logs, ILogger<JobWorker> logger) : BackgroundService
+public sealed class JobWorker(JobManager jobs, ProcessRunner runner, ProjectStore store, JobLogStore logs, MozartErrorLog errorLog, ILogger<JobWorker> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -133,6 +133,11 @@ public sealed class JobWorker(JobManager jobs, ProcessRunner runner, ProjectStor
             catch (Exception ex)
             {
                 logger.LogWarning(ex, "Could not finish job log file for {Job}", job.Id);
+            }
+
+            if (job.Status == JobStatus.Failed)
+            {
+                errorLog.WriteJobFailure(job);
             }
 
             jobs.NotifyChanged();

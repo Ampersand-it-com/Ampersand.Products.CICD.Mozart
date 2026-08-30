@@ -1,5 +1,6 @@
 using Ampersand.Mozart.WEB.Components;
 using Ampersand.Mozart.WEB.Services;
+using Ampersand.Mozart.WEB.Services.Logging;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -7,6 +8,9 @@ builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
 builder.Services.Configure<MozartOptions>(builder.Configuration.GetSection(MozartOptions.SectionName));
+
+builder.Services.AddSingleton<MozartErrorLog>();
+builder.Services.AddSingleton<ILoggerProvider, MozartFileLoggerProvider>();
 
 builder.Services.AddSingleton<ProcessRunner>();
 builder.Services.AddSingleton<ProjectStore>();
@@ -39,6 +43,22 @@ builder.Services.AddHttpClient("health", (provider, client) =>
 
 var app = builder.Build();
 
+AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+{
+    if (e.ExceptionObject is Exception ex)
+    {
+        app.Services.GetRequiredService<MozartErrorLog>()
+            .Write("Unhandled", "AppDomain unhandled exception", ex);
+    }
+};
+
+TaskScheduler.UnobservedTaskException += (_, e) =>
+{
+    app.Services.GetRequiredService<MozartErrorLog>()
+        .Write("Unhandled", "Unobserved task exception", e.Exception);
+    e.SetObserved();
+};
+
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Error", createScopeForErrors: true);
@@ -51,6 +71,14 @@ app.UseAntiforgery();
 app.MapStaticAssets();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
+
+app.MapGet("/api/logs/errors", (MozartErrorLog errors, int? tail) =>
+{
+    var text = tail is > 0 ? errors.ReadTail(tail.Value) : errors.ReadAll();
+    return text is null
+        ? Results.Text($"No errors logged yet. File: {errors.FilePath}", "text/plain; charset=utf-8")
+        : Results.Text(text, "text/plain; charset=utf-8");
+});
 
 app.MapGet("/api/jobs/{id}/log", (string id, JobManager jobs, JobLogStore logs) =>
 {

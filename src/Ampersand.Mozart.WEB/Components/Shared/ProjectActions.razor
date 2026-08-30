@@ -53,10 +53,8 @@
 
         _profiles = Profiles.GetProfiles(Project);
         _loadedFor = Project.Id;
-        _selected = _profiles.FirstOrDefault(p =>
-                string.Equals(p.Name, Project.DefaultPublishProfile, StringComparison.OrdinalIgnoreCase))?.Name
-            ?? _profiles.FirstOrDefault(p => p.Method == PublishMethod.MsDeploy)?.Name
-            ?? _profiles.FirstOrDefault()?.Name;
+        var resolved = Profiles.ResolveDeployProfile(Project);
+        _selected = resolved?.Name;
     }
 
     private void Run(Func<CicdProject, Job> start)

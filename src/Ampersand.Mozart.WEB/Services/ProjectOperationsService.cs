@@ -12,6 +12,7 @@ public sealed class ProjectOperationsService(
     PublishProfileService publishProfiles,
     VersionBumpService versions,
     PublishCredentialService credentials,
+    MozartErrorLog errorLog,
     IOptions<MozartOptions> options)
 {
     private const string PasswordMask = "***";
@@ -138,6 +139,70 @@ public sealed class ProjectOperationsService(
         await store.SaveAsync(project);
         return job;
     }
+
+    /// <summary>
+    /// Queues Web Deploy publish jobs for every enabled project that has a usable MSDeploy profile.
+    /// Order: Storage → Identity → OAuth clients (see <see cref="DeployAllPriority"/>).
+    /// </summary>
+    public async Task<DeployAllResult> DeployAllAsync(IReadOnlyList<CicdProject> projects)
+    {
+        var jobs = new List<Job>();
+        var skipped = new List<string>();
+
+        foreach (var project in projects
+                     .Where(p => p.IsEnabled)
+                     .OrderBy(p => DeployAllPriority(p.DisplayName))
+                     .ThenBy(p => p.DisplayName, StringComparer.OrdinalIgnoreCase))
+        {
+            var profile = publishProfiles.ResolveDeployProfile(project);
+            if (profile is null)
+            {
+                skipped.Add($"{project.DisplayName}: no publish profile");
+                continue;
+            }
+
+            if (profile.Method != PublishMethod.MsDeploy)
+            {
+                skipped.Add($"{project.DisplayName}: no Web Deploy profile (only {profile.MethodLabel})");
+                continue;
+            }
+
+            try
+            {
+                jobs.Add(await PublishAsync(project, profile.Name));
+            }
+            catch (Exception ex)
+            {
+                skipped.Add($"{project.DisplayName}: {ex.Message}");
+                errorLog.Write("DeployAll", $"Could not queue deploy for {project.DisplayName}", ex);
+            }
+        }
+
+        return new DeployAllResult(jobs, skipped);
+    }
+
+    private static int DeployAllPriority(string displayName)
+    {
+        var index = Array.FindIndex(
+            DeployAllOrder,
+            name => string.Equals(name, displayName, StringComparison.OrdinalIgnoreCase));
+        return index < 0 ? DeployAllOrder.Length : index;
+    }
+
+  private static readonly string[] DeployAllOrder =
+    [
+        "Ampersand.Storage",
+        "Ampersand.Identity",
+        "Ampersand.FamilyJourney",
+        "Ampersand.DiscordBot",
+        "Ampersand.AI",
+        "Ampersand.BotManager",
+        "OneRing.Ampersand.EmailService",
+        "Ampersand.Pegasus",
+        "Ampersand.TerraRPG",
+        "Ampersand.Products.Documentation.Wizard",
+        "Ampersand.IT.Mvc",
+    ];
 
     private Job Enqueue(
         CicdProject project,

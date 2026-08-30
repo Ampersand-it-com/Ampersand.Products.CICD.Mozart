@@ -50,6 +50,29 @@ public sealed class PublishProfileService(ILogger<PublishProfileService> logger)
     public PublishProfileInfo? Find(CicdProject project, string profileName) =>
         GetProfiles(project).FirstOrDefault(p => string.Equals(p.Name, profileName, StringComparison.OrdinalIgnoreCase));
 
+    /// <summary>Default Web Deploy / folder profile for one-click deploy.</summary>
+    public PublishProfileInfo? ResolveDeployProfile(CicdProject project)
+    {
+        var profiles = GetProfiles(project);
+        if (profiles.Count == 0)
+        {
+            return null;
+        }
+
+        if (!string.IsNullOrWhiteSpace(project.DefaultPublishProfile))
+        {
+            var configured = profiles.FirstOrDefault(p =>
+                string.Equals(p.Name, project.DefaultPublishProfile, StringComparison.OrdinalIgnoreCase));
+            if (configured is not null)
+            {
+                return configured;
+            }
+        }
+
+        return profiles.FirstOrDefault(p => p.Method == PublishMethod.MsDeploy)
+            ?? profiles.FirstOrDefault();
+    }
+
     public static string GetProfileFolder(string projectFile) =>
         Path.Combine(Path.GetDirectoryName(projectFile) ?? ".", "Properties", "PublishProfiles");
 

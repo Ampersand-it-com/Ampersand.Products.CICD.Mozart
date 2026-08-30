@@ -106,6 +106,7 @@ public sealed class VersionBumpService
     private static VersionBumpResult? BumpProgram(string programPath)
     {
         var (text, bom) = ReadUtf8(programPath);
+        text = NormalizeAssemblyAttributesAfterUsings(text);
         var matches = AssemblyAttr.Matches(text);
         if (matches.Count == 0)
         {
@@ -119,20 +120,121 @@ public sealed class VersionBumpService
         return new VersionBumpResult(programPath, oldVersion, newVersion);
     }
 
+    /// <summary>
+    /// CS1529: assembly attributes must come after all using directives.
+    /// </summary>
+    private static string NormalizeAssemblyAttributesAfterUsings(string text)
+    {
+        var lines = text.Split(["\r\n", "\n"], StringSplitOptions.None).ToList();
+        var headerEnd = 0;
+        for (var i = 0; i < lines.Count; i++)
+        {
+            var trimmed = lines[i].Trim();
+            if (trimmed.Length == 0
+                || trimmed.StartsWith("using ", StringComparison.Ordinal)
+                || trimmed.StartsWith("global using ", StringComparison.Ordinal)
+                || trimmed.StartsWith("[assembly:", StringComparison.Ordinal))
+            {
+                headerEnd = i + 1;
+                continue;
+            }
+
+            break;
+        }
+
+        if (headerEnd == 0)
+        {
+            return text;
+        }
+
+        var header = lines.Take(headerEnd).ToList();
+        var body = lines.Skip(headerEnd).ToList();
+        var usings = header
+            .Where(l =>
+            {
+                var t = l.Trim();
+                return t.StartsWith("using ", StringComparison.Ordinal)
+                    || t.StartsWith("global using ", StringComparison.Ordinal);
+            })
+            .Distinct()
+            .ToList();
+        var attrs = header
+            .Where(l => l.Trim().StartsWith("[assembly:", StringComparison.Ordinal))
+            .ToList();
+
+        if (attrs.Count == 0 || usings.Count == 0)
+        {
+            return text;
+        }
+
+        var usingIndices = header
+            .Select((line, index) => (line, index))
+            .Where(x =>
+            {
+                var t = x.line.Trim();
+                return t.StartsWith("using ", StringComparison.Ordinal)
+                    || t.StartsWith("global using ", StringComparison.Ordinal);
+            })
+            .Select(x => x.index)
+            .ToList();
+        var attrIndices = header
+            .Select((line, index) => (line, index))
+            .Where(x => x.line.Trim().StartsWith("[assembly:", StringComparison.Ordinal))
+            .Select(x => x.index)
+            .ToList();
+
+        if (attrIndices.Min() > usingIndices.Max())
+        {
+            return text;
+        }
+
+        var result = new List<string>(usings);
+        result.Add(string.Empty);
+        result.AddRange(attrs);
+        result.Add(string.Empty);
+        result.AddRange(body);
+        return string.Join(Environment.NewLine, result);
+    }
+
     private static VersionBumpResult InsertAssemblyVersion(string programPath, string text, bool bom)
     {
         const string oldVersion = "0.0.0";
         const string newVersion = "1.0.1";
-        var block =
-            "[assembly: AssemblyVersion(\"" + newVersion + "\")]" + Environment.NewLine +
-            "[assembly: AssemblyFileVersion(\"" + newVersion + "\")]" + Environment.NewLine + Environment.NewLine;
+        text = NormalizeAssemblyAttributesAfterUsings(text);
 
-        if (!text.Contains("using System.Reflection;", StringComparison.Ordinal))
+        var lines = text.Split(["\r\n", "\n"], StringSplitOptions.None).ToList();
+        var insertAt = 0;
+        for (var i = 0; i < lines.Count; i++)
         {
-            block = "using System.Reflection;" + Environment.NewLine + block;
+            var trimmed = lines[i].Trim();
+            if (trimmed.StartsWith("using ", StringComparison.Ordinal)
+                || trimmed.StartsWith("global using ", StringComparison.Ordinal))
+            {
+                insertAt = i + 1;
+                continue;
+            }
+
+            if (trimmed.Length == 0 && insertAt > 0)
+            {
+                insertAt = i + 1;
+                continue;
+            }
+
+            break;
         }
 
-        WriteUtf8(programPath, block + text, bom);
+        if (!lines.Take(insertAt).Any(l => l.Trim() == "using System.Reflection;"))
+        {
+            lines.Insert(insertAt, "using System.Reflection;");
+            insertAt++;
+        }
+
+        lines.Insert(insertAt, string.Empty);
+        lines.Insert(insertAt + 1, "[assembly: AssemblyVersion(\"" + newVersion + "\")]");
+        lines.Insert(insertAt + 2, "[assembly: AssemblyFileVersion(\"" + newVersion + "\")]");
+        lines.Insert(insertAt + 3, string.Empty);
+
+        WriteUtf8(programPath, string.Join(Environment.NewLine, lines), bom);
         return new VersionBumpResult(programPath, oldVersion, newVersion);
     }
 

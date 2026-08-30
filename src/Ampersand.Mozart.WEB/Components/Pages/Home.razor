@@ -5,6 +5,8 @@
 @inject GitService Git
 @inject VersionBumpService Versions
 @inject PublishProfileService Profiles
+@inject ProjectOperationsService Ops
+@inject NavigationManager Nav
 @implements IDisposable
 
 <PageTitle>Mozart · Dashboard</PageTitle>
@@ -16,9 +18,15 @@
     </div>
     <div class="actions">
         <AddProjectButton OnAdded="AfterAddedAsync" />
+        <button class="btn btn-ok" @onclick="DeployAllAsync" disabled="@(_deployingAll || _projects.Count == 0)">Deploy all</button>
         <button class="btn" @onclick="ProbeAllAsync" disabled="@_probing">Ping all</button>
     </div>
 </div>
+
+@if (!string.IsNullOrWhiteSpace(_deployAllMessage))
+{
+    <div class="flash @(_deployAllError ? "flash-err" : "flash-ok")" style="margin-bottom:16px">@_deployAllMessage</div>
+}
 
 <div class="grid grid-4" style="margin-bottom:20px">
     <div class="card stat">
@@ -132,6 +140,9 @@ else
     private readonly Dictionary<string, string> _versions = [];
     private string _filter = "";
     private bool _probing;
+    private bool _deployingAll;
+    private string? _deployAllMessage;
+    private bool _deployAllError;
     private int _healthy;
     private int _failed;
 
@@ -214,6 +225,43 @@ else
         finally
         {
             _probing = false;
+        }
+    }
+
+    private async Task DeployAllAsync()
+    {
+        _deployingAll = true;
+        _deployAllMessage = null;
+        _deployAllError = false;
+        try
+        {
+            var result = await Ops.DeployAllAsync(_projects);
+            if (result.Jobs.Count == 0)
+            {
+                _deployAllError = true;
+                _deployAllMessage = result.Skipped.Count == 0
+                    ? "No enabled projects with Web Deploy profiles."
+                    : string.Join(" · ", result.Skipped);
+                return;
+            }
+
+            var message = $"Queued {result.Jobs.Count} deploy job(s).";
+            if (result.Skipped.Count > 0)
+            {
+                message += $" Skipped {result.Skipped.Count}: {string.Join("; ", result.Skipped)}";
+            }
+
+            _deployAllMessage = message;
+            Nav.NavigateTo("/jobs");
+        }
+        catch (Exception ex)
+        {
+            _deployAllError = true;
+            _deployAllMessage = ex.Message;
+        }
+        finally
+        {
+            _deployingAll = false;
         }
     }
 
