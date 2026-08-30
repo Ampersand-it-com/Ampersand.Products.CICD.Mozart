@@ -53,6 +53,30 @@ else if (_project is not null)
 
     <ProjectActions Project="_project" Busy="_busy" NavigateToJob="true" ShowOpen="false" />
 
+    @if (_runJob is not null)
+    {
+        <div class="card run-console" style="margin-top:16px">
+            <div class="card-head">
+                <div>
+                    <h3>Console · @_runJob.Title</h3>
+                    @if (!string.IsNullOrWhiteSpace(_runJob.Summary))
+                    {
+                        <div class="muted path">@_runJob.Summary</div>
+                    }
+                </div>
+                <div class="actions">
+                    <button class="btn btn-sm btn-danger" @onclick="StopRun">Stop</button>
+                    <a class="btn btn-sm" href="@($"/jobs/{_runJob.Id}")">Full log</a>
+                    @if (!string.IsNullOrWhiteSpace(_runJob.LaunchUrl))
+                    {
+                        <a class="btn btn-sm btn-ghost" href="@_runJob.LaunchUrl" target="_blank">Open site</a>
+                    }
+                </div>
+            </div>
+            <JobLog Lines="_runLines" />
+        </div>
+    }
+
     <div class="tabs" style="margin-top:22px">
         <button class="tab @(_tab=="info"?"active":"")" @onclick='() => _tab="info"'>Info</button>
         <button class="tab @(_tab=="profiles"?"active":"")" @onclick='() => _tab="profiles"'>Publish profiles</button>
@@ -331,6 +355,14 @@ else if (_project is not null)
                 <input @bind="_project.DefaultPublishProfile" />
             </div>
             <div class="field">
+                <label>Run project path (optional csproj when entry is a solution)</label>
+                <input @bind="_project.RunProjectPath" placeholder="C:\path\MyApp.WEB\MyApp.csproj" />
+            </div>
+            <div class="field">
+                <label>Default launch profile (dotnet run, from launchSettings.json)</label>
+                <input @bind="_project.DefaultLaunchProfile" placeholder="http" />
+            </div>
+            <div class="field">
                 <label>Web Deploy password (if VS EncryptedPassword is not used)</label>
                 <input type="password" @bind="_settingsPassword" autocomplete="off" />
             </div>
@@ -386,6 +418,8 @@ else if (_project is not null)
     private bool _busy;
     private string? _version;
     private string? _settingsPassword;
+    private Job? _runJob;
+    private IReadOnlyList<JobLogLine> _runLines = [];
 
     protected override async Task OnParametersSetAsync()
     {
@@ -414,7 +448,8 @@ else if (_project is not null)
         _version = Versions.ReadVersion(_project, _profiles);
         _jobs = Jobs.GetJobs(_project.Id, 40);
         _health = Health.GetCached(_project.Id);
-        _busy = Jobs.GetActiveJobs().Any(j => j.ProjectId == _project.Id);
+        _busy = Jobs.GetActiveJobs().Any(j => j.ProjectId == _project.Id && j.Kind != JobKind.Run);
+        RefreshRunConsole();
 
         try
         {
@@ -625,6 +660,22 @@ else if (_project is not null)
 
     private void ToggleRaw() => _showRaw = !_showRaw;
 
+    private void StopRun()
+    {
+        if (_project is null)
+        {
+            return;
+        }
+
+        Ops.StopRun(_project);
+    }
+
+    private void RefreshRunConsole()
+    {
+        _runJob = Jobs.GetRunningRunJob(_project?.Id ?? string.Empty);
+        _runLines = _runJob?.Snapshot() ?? [];
+    }
+
     private void OnJobsChanged()
     {
         _ = InvokeAsync(async () =>
@@ -632,7 +683,8 @@ else if (_project is not null)
             if (_project is not null)
             {
                 _jobs = Jobs.GetJobs(_project.Id, 40);
-                _busy = Jobs.GetActiveJobs().Any(j => j.ProjectId == _project.Id);
+                _busy = Jobs.GetActiveJobs().Any(j => j.ProjectId == _project.Id && j.Kind != JobKind.Run);
+                RefreshRunConsole();
             }
 
             StateHasChanged();

@@ -105,3 +105,19 @@ Recent log lines:
   Error:          C:\Users\PerviroKim\Documents\MEGA\Synced\Ampersand.Products.EmailService\obj\Release\net9.0\OneRing.Ampersand.EmailService.AssemblyInfo.cs(16,12): error CS0579: Duplicate 'System.Reflection.AssemblyFileVersionAttribute' attribute [C:\Users\PerviroKim\Documents\MEGA\Synced\Ampersand.Products.EmailService\OneRing.Ampersand.EmailService.csproj]
   Error:          C:\Users\PerviroKim\Documents\MEGA\Synced\Ampersand.Products.EmailService\obj\Release\net9.0\OneRing.Ampersand.EmailService.AssemblyInfo.cs(20,12): error CS0579: Duplicate 'System.Reflection.AssemblyVersionAttribute' attribute [C:\Users\PerviroKim\Documents\MEGA\Synced\Ampersand.Products.EmailService\OneRing.Ampersand.EmailService.csproj]
 ---
+2026-08-30 03:43:48.456 +03:00 [Job] FAILED Ampersand.CRM — git commit + push
+JobId: 9b64b434543e
+Project: Ampersand.CRM
+Kind: GitCommitPush
+Title: git commit + push
+Status: Failed
+ExitCode: 1
+Reason: To https://github.com/Ampersand-it-com/Ampersand.OneRing.git · ! [remote rejected]   111 -> 111 (cannot lock ref 'refs/heads/111': is at ff30a18208ab8d64a2e4621faa4587c000a1919c but expected 576b911dbfc05b5de87ea17f67db546f2749b343) · error: failed to push some refs to 'https://github.com/Ampersand-it-com/Ampersand.OneRing.git'
+Command: git Mozart: Ampersand.CRM @ 2026-08-30 03:43
+Cwd: C:\Users\PerviroKim\Documents\MEGA\Synced\Ampersand.OneRing
+JobLog: C:\Users\PerviroKim\Documents\MEGA\Synced\Ampersand.Products.CICD.Mozart\src\Ampersand.Mozart.WEB\data\jobs\9b64b434543e.log
+Recent log lines:
+  Error: To https://github.com/Ampersand-it-com/Ampersand.OneRing.git
+  Error:  ! [remote rejected]   111 -> 111 (cannot lock ref 'refs/heads/111': is at ff30a18208ab8d64a2e4621faa4587c000a1919c but expected 576b911dbfc05b5de87ea17f67db546f2749b343)
+  Error: error: failed to push some refs to 'https://github.com/Ampersand-it-com/Ampersand.OneRing.git'
+---

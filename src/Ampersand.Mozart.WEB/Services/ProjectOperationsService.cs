@@ -12,6 +12,7 @@ public sealed class ProjectOperationsService(
     PublishProfileService publishProfiles,
     VersionBumpService versions,
     PublishCredentialService credentials,
+    LaunchSettingsService launchSettings,
     MozartErrorLog errorLog,
     GitService git,
     IOptions<MozartOptions> options)
@@ -110,6 +111,57 @@ public sealed class ProjectOperationsService(
 
     public Job Custom(CicdProject project, string arguments) =>
         Enqueue(project, JobKind.Custom, $"dotnet {arguments}", _options.DotnetPath, arguments);
+
+    /// <summary>
+    /// Starts dotnet run and keeps the job alive until the process exits or the user stops it.
+    /// </summary>
+    public Job Run(CicdProject project, string? launchProfileName = null)
+    {
+        if (jobs.GetRunningRunJob(project.Id) is not null)
+        {
+            throw new InvalidOperationException("Project is already running. Stop it first.");
+        }
+
+        var runProject = launchSettings.ResolveRunProjectPath(project)
+            ?? throw new InvalidOperationException("No runnable web/exe project found. Set Run project path in Settings.");
+
+        var profiles = launchSettings.GetProfiles(runProject);
+        var profile = string.IsNullOrWhiteSpace(launchProfileName)
+            ? launchSettings.ResolveDefaultProfile(project, profiles)
+            : profiles.FirstOrDefault(p => string.Equals(p.Name, launchProfileName, StringComparison.OrdinalIgnoreCase));
+
+        if (profile is null && !string.IsNullOrWhiteSpace(launchProfileName))
+        {
+            throw new InvalidOperationException($"Launch profile '{launchProfileName}' not found.");
+        }
+
+        var arguments = $"run --project {Quote(runProject)}";
+        if (profile is not null)
+        {
+            arguments += $" --launch-profile {Quote(profile.Name)}";
+        }
+
+        arguments += Extra(project);
+
+        var title = profile is null
+            ? $"Run {Path.GetFileNameWithoutExtension(runProject)}"
+            : $"Run {Path.GetFileNameWithoutExtension(runProject)} ({profile.Name})";
+
+        return jobs.Enqueue(new Job
+        {
+            ProjectId = project.Id,
+            ProjectName = project.DisplayName,
+            Kind = JobKind.Run,
+            Title = title,
+            FileName = _options.DotnetPath,
+            Arguments = arguments,
+            DisplayArguments = arguments,
+            WorkingDirectory = project.WorkingDirectory,
+            LaunchUrl = profile?.BrowserUrl,
+        });
+    }
+
+    public bool StopRun(CicdProject project) => jobs.StopRun(project.Id);
 
     /// <summary>
     /// Publishes with a .pubxml profile. Folder profiles go through dotnet publish,

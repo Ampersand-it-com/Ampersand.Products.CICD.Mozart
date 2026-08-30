@@ -176,6 +176,7 @@ main {
 .btn:disabled { opacity: 0.45; cursor: not-allowed; }
 .btn-primary { --btn-bg: #2b5aad; --btn-fg: #fff; border-color: #3a6bc4; }
 .btn-ok { --btn-bg: #1d5a3c; --btn-fg: #d6ffe8; border-color: #26724c; }
+.btn-run { --btn-bg: #1d4a5a; --btn-fg: #d6f4ff; border-color: #267284; }
 .btn-warn { --btn-bg: #5a4a1d; --btn-fg: #fff3c8; border-color: #7a6528; }
 .btn-danger { --btn-bg: #5a2328; --btn-fg: #ffd6d8; border-color: #7a3036; }
 .btn-ghost { background: transparent; }
@@ -304,6 +305,10 @@ main {
 .log .sev-system { color: #8bd4c3; }
 .log .sev-info { color: #c7d0dd; }
 .log .ts { color: #5c6780; margin-right: 8px; }
+
+.run-console .log {
+    max-height: 420px;
+}
 
 .empty {
     padding: 40px 20px;

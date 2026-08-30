@@ -18,8 +18,11 @@ public sealed class MozartOptions
 
     public int JobHistoryLimit { get; set; } = 200;
 
-    /// <summary>Hard timeout for a single command.</summary>
+    /// <summary>Hard timeout for a single command. Run jobs ignore this.</summary>
     public int JobTimeoutMinutes { get; set; } = 30;
+
+    /// <summary>Optional cap for dotnet run jobs. Zero = no timeout.</summary>
+    public int RunTimeoutMinutes { get; set; } = 0;
 
     public int HealthTimeoutSeconds { get; set; } = 10;
 

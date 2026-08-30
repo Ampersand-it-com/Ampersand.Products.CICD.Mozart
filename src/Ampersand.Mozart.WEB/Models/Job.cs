@@ -12,6 +12,7 @@ public enum JobKind
     GitPull,
     GitCommitPush,
     Custom,
+    Run,
 }
 
 public enum JobStatus

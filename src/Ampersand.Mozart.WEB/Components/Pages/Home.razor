@@ -1,4 +1,4 @@
-﻿@page "/"
+@page "/"
 @inject ProjectStore Store
 @inject JobManager Jobs
 @inject HealthProbeService Health
@@ -81,7 +81,8 @@ else
                     var last = Jobs.GetJobs(project.Id, 1).FirstOrDefault();
                     var health = Health.GetCached(project.Id);
                     var git = _git.GetValueOrDefault(project.Id);
-                    var busy = _active.Any(j => j.ProjectId == project.Id);
+                    var busy = _active.Any(j => j.ProjectId == project.Id && j.Kind != JobKind.Run);
+                    var running = _active.FirstOrDefault(j => j.ProjectId == project.Id && j.Kind == JobKind.Run);
                     var version = _versions.GetValueOrDefault(project.Id) ?? project.LastVersion;
                     var failed = last?.Status == JobStatus.Failed || !string.IsNullOrWhiteSpace(project.LastDeployError);
 
@@ -120,6 +121,12 @@ else
                             else
                             {
                                 <span class="muted">—</span>
+                            }
+                            @if (running is not null)
+                            {
+                                <div class="muted" style="margin-top:4px">
+                                    <StatusBadge Status="JobStatus.Running" /> running · <a href="@($"/jobs/{running.Id}")">console</a>
+                                </div>
                             }
                             @if (failed)
                             {

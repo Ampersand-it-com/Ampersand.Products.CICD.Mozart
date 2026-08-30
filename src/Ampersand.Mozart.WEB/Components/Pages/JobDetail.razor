@@ -29,7 +29,9 @@ else
             <StatusBadge Status="status" />
             @if (_job?.IsActive == true)
             {
-                <button class="btn btn-danger" @onclick="() => Jobs.Cancel(_job.Id)">Cancel</button>
+                <button class="btn btn-danger" @onclick="() => Jobs.Cancel(_job.Id)">
+                    @(_job.Kind == JobKind.Run ? "Stop" : "Cancel")
+                </button>
             }
             <a class="btn" href="/jobs">All jobs</a>
             <a class="btn" href="@($"/api/jobs/{Id}/log")" target="_blank">Raw log</a>

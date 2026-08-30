@@ -49,7 +49,9 @@
                             <a href="@($"/jobs/{row.Id}")">log</a>
                             @if (row.IsActive)
                             {
-                                <button class="btn btn-sm btn-danger" style="margin-left:8px" @onclick="() => JobQueue.Cancel(row.Id)">Cancel</button>
+                                <button class="btn btn-sm btn-danger" style="margin-left:8px" @onclick="() => JobQueue.Cancel(row.Id)">
+                                    @(row.Kind == JobKind.Run ? "Stop" : "Cancel")
+                                </button>
                             }
                             <a class="btn btn-sm btn-ghost" href="@($"/api/jobs/{row.Id}/log")" target="_blank">file</a>
                         </td>
@@ -80,6 +82,7 @@
                 j.ProjectId,
                 j.ProjectName,
                 j.Title,
+                j.Kind,
                 j.Status,
                 j.Duration,
                 j.StartedUtc ?? j.CreatedUtc,
@@ -90,6 +93,7 @@
                 r.ProjectId,
                 r.ProjectName,
                 r.Title,
+                JobKind.Custom,
                 Enum.TryParse<JobStatus>(r.Status, out var s) ? s : JobStatus.Failed,
                 r.FinishedUtc is { } fin && r.StartedUtc is { } start ? fin - start : null,
                 r.FinishedUtc ?? r.StartedUtc ?? r.CreatedUtc,
@@ -114,6 +118,7 @@
         string ProjectId,
         string ProjectName,
         string Title,
+        JobKind Kind,
         JobStatus Status,
         TimeSpan? Duration,
         DateTimeOffset When,

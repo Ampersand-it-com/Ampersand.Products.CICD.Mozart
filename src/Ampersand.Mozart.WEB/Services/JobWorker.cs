@@ -142,8 +142,9 @@ public sealed class JobWorker(
         catch (OperationCanceledException)
         {
             job.Status = JobStatus.Canceled;
-            job.Append(LogSeverity.System, "Job canceled.");
-            logs.Append(job, LogSeverity.System, "Job canceled.");
+            var message = job.Kind == JobKind.Run ? "Run stopped." : "Job canceled.";
+            job.Append(LogSeverity.System, message);
+            logs.Append(job, LogSeverity.System, message);
         }
         catch (Exception ex)
         {
@@ -198,6 +199,14 @@ public sealed class JobWorker(
         }
 
         if (job.Kind == JobKind.Publish && trimmed.Contains("published to", StringComparison.OrdinalIgnoreCase))
+        {
+            job.Summary = trimmed;
+            return;
+        }
+
+        if (job.Kind == JobKind.Run &&
+            (trimmed.Contains("Now listening on:", StringComparison.OrdinalIgnoreCase) ||
+             trimmed.Contains("Application started", StringComparison.OrdinalIgnoreCase)))
         {
             job.Summary = trimmed;
         }

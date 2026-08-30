@@ -84,6 +84,21 @@ public sealed class JobManager(IOptions<MozartOptions> options, ILogger<JobManag
         }
     }
 
+    public Job? GetRunningRunJob(string projectId)
+    {
+        lock (_historyLock)
+        {
+            return _history.FirstOrDefault(
+                j => j.ProjectId == projectId && j.Kind == JobKind.Run && j.Status == JobStatus.Running);
+        }
+    }
+
+    public bool StopRun(string projectId)
+    {
+        var job = GetRunningRunJob(projectId);
+        return job is not null && Cancel(job.Id);
+    }
+
     public bool Cancel(string jobId)
     {
         if (_running.TryGetValue(jobId, out var cts))
@@ -118,7 +133,15 @@ public sealed class JobManager(IOptions<MozartOptions> options, ILogger<JobManag
     internal CancellationTokenSource RegisterRunning(Job job, CancellationToken stoppingToken)
     {
         var cts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
-        cts.CancelAfter(TimeSpan.FromMinutes(Math.Max(1, _options.JobTimeoutMinutes)));
+        if (job.Kind != JobKind.Run)
+        {
+            cts.CancelAfter(TimeSpan.FromMinutes(Math.Max(1, _options.JobTimeoutMinutes)));
+        }
+        else if (_options.RunTimeoutMinutes > 0)
+        {
+            cts.CancelAfter(TimeSpan.FromMinutes(_options.RunTimeoutMinutes));
+        }
+
         _running[job.Id] = cts;
         return cts;
     }

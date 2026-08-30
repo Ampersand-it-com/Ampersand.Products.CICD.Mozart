@@ -20,6 +20,12 @@ public sealed class CicdProject
     /// <summary>Publish profile name used by the one-click deploy button.</summary>
     public string? DefaultPublishProfile { get; set; }
 
+    /// <summary>launchSettings profile for dotnet run (e.g. http).</summary>
+    public string? DefaultLaunchProfile { get; set; }
+
+    /// <summary>Explicit csproj to run when the entry point is a solution.</summary>
+    public string? RunProjectPath { get; set; }
+
     /// <summary>URL probed by the health check (HTTP status + latency).</summary>
     public string? HealthUrl { get; set; }
 
@@ -72,6 +78,8 @@ public sealed class CicdProject
         TestPath = TestPath,
         Configuration = Configuration,
         DefaultPublishProfile = DefaultPublishProfile,
+        DefaultLaunchProfile = DefaultLaunchProfile,
+        RunProjectPath = RunProjectPath,
         HealthUrl = HealthUrl,
         PingHost = PingHost,
         Group = Group,

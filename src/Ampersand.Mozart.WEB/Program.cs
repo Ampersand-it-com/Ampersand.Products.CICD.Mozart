@@ -18,6 +18,7 @@ builder.Services.AddSingleton<JobManager>();
 builder.Services.AddSingleton<HealthProbeService>();
 builder.Services.AddSingleton<PublishProfileService>();
 builder.Services.AddSingleton<ProjectInspector>();
+builder.Services.AddSingleton<LaunchSettingsService>();
 builder.Services.AddSingleton<GitService>();
 builder.Services.AddSingleton<GitCommitService>();
 builder.Services.AddSingleton<NativeFilePicker>();

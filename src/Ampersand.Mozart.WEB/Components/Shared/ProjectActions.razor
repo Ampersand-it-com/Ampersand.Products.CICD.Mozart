@@ -1,8 +1,34 @@
 @inject ProjectOperationsService Ops
 @inject PublishProfileService Profiles
+@inject LaunchSettingsService Launch
+@inject JobManager Jobs
 @inject NavigationManager Nav
+@implements IDisposable
 
 <div class="actions">
+    @if (_canRun)
+    {
+        @if (_runningRun is not null)
+        {
+            <button class="btn btn-sm btn-danger" @onclick="StopRunAsync">Stop</button>
+            <a class="btn btn-sm btn-ghost" href="@($"/jobs/{_runningRun.Id}")">Console</a>
+        }
+        else
+        {
+            @if (_launchProfiles.Count > 1)
+            {
+                <select class="btn btn-sm" style="max-width:140px" @bind="_selectedLaunch" disabled="@Busy">
+                    @foreach (var profile in _launchProfiles)
+                    {
+                        <option value="@profile.Name">@profile.Name</option>
+                    }
+                </select>
+            }
+            <button class="btn btn-sm btn-run" disabled="@Busy" @onclick="RunAsync">
+                Run @(_selectedLaunch ?? _launchProfiles.FirstOrDefault()?.Name ?? "")
+            </button>
+        }
+    }
     <button class="btn btn-sm" disabled="@Busy" @onclick="() => Run(p => Ops.Restore(p))">Restore</button>
     <button class="btn btn-sm btn-primary" disabled="@Busy" @onclick="() => Run(p => Ops.Build(p))">Build</button>
     <button class="btn btn-sm" disabled="@Busy" @onclick="() => Run(p => Ops.Test(p))">Tests</button>
@@ -41,22 +67,46 @@
     [Parameter] public bool NavigateToJob { get; set; }
 
     private IReadOnlyList<PublishProfileInfo> _profiles = [];
+    private IReadOnlyList<LaunchProfileInfo> _launchProfiles = [];
+    private Job? _runningRun;
+    private bool _canRun;
     private string? _selected;
+    private string? _selectedLaunch;
     private string? _error;
     private string? _loadedFor;
 
+    protected override void OnInitialized() => Jobs.Changed += OnJobsChanged;
+
     protected override void OnParametersSet()
     {
-        if (_loadedFor == Project.Id && _profiles.Count > 0)
+        if (_loadedFor != Project.Id)
         {
-            return;
+            _profiles = Profiles.GetProfiles(Project);
+            _loadedFor = Project.Id;
+            var resolved = Profiles.ResolveDeployProfile(Project);
+            _selected = resolved?.Name;
+
+            _canRun = Launch.CanRun(Project);
+            _launchProfiles = Launch.GetProfiles(Project);
+            var defaultLaunch = Launch.ResolveDefaultProfile(Project, _launchProfiles);
+            _selectedLaunch = defaultLaunch?.Name;
         }
 
-        _profiles = Profiles.GetProfiles(Project);
-        _loadedFor = Project.Id;
-        var resolved = Profiles.ResolveDeployProfile(Project);
-        _selected = resolved?.Name;
+        RefreshRunState();
     }
+
+    private void OnJobsChanged()
+    {
+        _ = InvokeAsync(() =>
+        {
+            RefreshRunState();
+            StateHasChanged();
+        });
+    }
+
+    public void Dispose() => Jobs.Changed -= OnJobsChanged;
+
+    private void RefreshRunState() => _runningRun = Jobs.GetRunningRunJob(Project.Id);
 
     private void Run(Func<CicdProject, Job> start)
     {
@@ -66,6 +116,31 @@
         {
             Nav.NavigateTo($"/jobs/{job.Id}");
         }
+    }
+
+    private void RunAsync()
+    {
+        _error = null;
+        try
+        {
+            var job = Ops.Run(Project, _selectedLaunch);
+            RefreshRunState();
+            if (NavigateToJob)
+            {
+                Nav.NavigateTo($"/jobs/{job.Id}");
+            }
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+    }
+
+    private void StopRunAsync()
+    {
+        _error = null;
+        Ops.StopRun(Project);
+        RefreshRunState();
     }
 
     private async Task DeployAsync()
